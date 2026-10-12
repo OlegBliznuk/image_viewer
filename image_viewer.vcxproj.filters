@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="imgui">
+      <UniqueIdentifier>{4C1F7A92-2D6E-4B8A-9E3F-7A1B5C0D2E61}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="app.cpp" />
+    <ClCompile Include="display.cpp" />
+    <ClCompile Include="gpu.cpp" />
+    <ClCompile Include="image_bmp.cpp" />
+    <ClCompile Include="image_cr3.cpp" />
+    <ClCompile Include="image_gif.cpp" />
+    <ClCompile Include="image_color.cpp" />
+    <ClCompile Include="image_hdr.cpp" />
+    <ClCompile Include="image_heic.cpp" />
+    <ClCompile Include="image_ico.cpp" />
+    <ClCompile Include="image_io.cpp" />
+    <ClCompile Include="image_save.cpp" />
+    <ClCompile Include="image_svg.cpp" />
+    <ClCompile Include="image_jpeg.cpp" />
+    <ClCompile Include="image_png.cpp" />
+    <ClCompile Include="image_exr.cpp" />
+    <ClCompile Include="image_tga.cpp" />
+    <ClCompile Include="image_tiff.cpp" />
+    <ClCompile Include="image_webp.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="parallel.cpp" />
+    <ClCompile Include="yuv.cpp" />
+    <ClCompile Include="disposer.cpp" />
+    <ClCompile Include="prefetch.cpp" />
+    <ClCompile Include="registration.cpp" />
+    <ClCompile Include="metadata.cpp" />
+    <ClCompile Include="sequence.cpp" />
+    <ClCompile Include="streamer.cpp" />
+    <ClCompile Include="svg_view.cpp" />
+    <ClCompile Include="stb_impl.cpp" />
+    <ClCompile Include="..\imgui_docking\imgui.cpp">
+      <Filter>imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\imgui_docking\imgui_draw.cpp">
+      <Filter>imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\imgui_docking\imgui_tables.cpp">
+      <Filter>imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\imgui_docking\imgui_widgets.cpp">
+      <Filter>imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\imgui_docking\backends\imgui_impl_dx12.cpp">
+      <Filter>imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\imgui_docking\backends\imgui_impl_win32.cpp">
+      <Filter>imgui</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="app.h" />
+    <ClInclude Include="display.h" />
+    <ClInclude Include="gpu.h" />
+    <ClInclude Include="image_formats.h" />
+    <ClInclude Include="image_io.h" />
+    <ClInclude Include="image_save.h" />
+    <ClInclude Include="parallel.h" />
+    <ClInclude Include="yuv.h" />
+    <ClInclude Include="disposer.h" />
+    <ClInclude Include="image_exr.h" />
+    <ClInclude Include="prefetch.h" />
+    <ClInclude Include="registration.h" />
+    <ClInclude Include="metadata.h" />
+    <ClInclude Include="sequence.h" />
+    <ClInclude Include="sequence_parser.h" />
+    <ClInclude Include="startup_timing.h" />
+    <ClInclude Include="streamer.h" />
+    <ClInclude Include="svg_view.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="display_vs.hlsl" />
+    <FxCompile Include="display_ps.hlsl" />
+    <FxCompile Include="mips_cs.hlsl" />
+    <FxCompile Include="unpack_cs.hlsl" />
+    <None Include="display.hlsli" />
+    <None Include="filter.hlsli" />
+    <None Include="res\ic_fluent_image_24_filled.svg" />
+    <None Include="res\make_icon.py" />
+    <Image Include="res\app.ico" />
+    <Image Include="res\fmt_exr.ico" />
+    <Image Include="res\fmt_png.ico" />
+    <Image Include="res\fmt_jpg.ico" />
+    <Image Include="res\fmt_hdr.ico" />
+    <Image Include="res\fmt_bmp.ico" />
+    <Image Include="res\fmt_tga.ico" />
+    <Image Include="res\fmt_cr3.ico" />
+    <Image Include="res\fmt_gif.ico" />
+    <Image Include="res\fmt_webp.ico" />
+    <Image Include="res\fmt_svg.ico" />
+    <Image Include="res\fmt_heic.ico" />
+    <Image Include="res\fmt_tif.ico" />
+    <Image Include="res\fmt_tx.ico" />
+    <None Include="res\make_format_icons.py" />
+    <ResourceCompile Include="image_viewer.rc" />
+  </ItemGroup>
+</Project>

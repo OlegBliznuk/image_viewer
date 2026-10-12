@@ -1,0 +1,60 @@
+# build output (Release goes to build\, the dev configuration builds outside the repo)
+/build/
+x64/
+Debug/
+Release/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.exe
+*.dll
+*.res
+*.tlog
+*.log
+*.idb
+*.ipdb
+*.iobj
+*.lastbuildstate
+*.recipe
+*.cso
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+*.aps
+*.ncb
+ipch/
+
+# vcpkg manifest mode
+vcpkg_installed/
+
+# CMake / other build trees
+/out/
+/cmake-build-*/
+CMakeUserPresets.json
+
+# IDEs
+.idea/
+.vscode/
+
+# Python (icon scripts in res/)
+__pycache__/
+*.pyc
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# local leftovers
+*.tmp
+*.bak
+*.orig
+imgui.ini

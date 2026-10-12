@@ -1,0 +1,16 @@
+// app icon (res/app.ico is generated from res/ic_fluent_image_24_filled.svg by res/make_icon.py)
+1 ICON "res\\app.ico"
+// file-type icons (res/make_format_icons.py), for DefaultIcon = image_viewer.exe,-<id>
+101 ICON "res\\fmt_exr.ico"
+102 ICON "res\\fmt_png.ico"
+103 ICON "res\\fmt_jpg.ico"
+104 ICON "res\\fmt_hdr.ico"
+105 ICON "res\\fmt_bmp.ico"
+106 ICON "res\\fmt_tga.ico"
+107 ICON "res\\fmt_cr3.ico"
+108 ICON "res\\fmt_gif.ico"
+109 ICON "res\\fmt_webp.ico"
+110 ICON "res\\fmt_svg.ico"
+111 ICON "res\\fmt_heic.ico"
+112 ICON "res\\fmt_tif.ico"
+113 ICON "res\\fmt_tx.ico"

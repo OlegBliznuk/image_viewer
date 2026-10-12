@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="dev|x64">
+      <Configuration>dev</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>15.0</VCProjectVersion>
+    <ProjectGuid>{BE7B0284-9B12-46DD-9F73-4028B302AFF3}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>image_viewer</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <!-- vcpkg (classic mode): copies the dependent DLLs next to the exe; libraries are linked by the sources' #pragma comment(lib) -->
+  <PropertyGroup Label="Vcpkg">
+    <VcpkgRoot>$(VCPKG)</VcpkgRoot>
+    <VcpkgTriplet>x64-windows</VcpkgTriplet>
+    <VcpkgEnableManifest>false</VcpkgEnableManifest>
+    <VcpkgAutoLink>false</VcpkgAutoLink>
+    <VcpkgApplocalDeps>true</VcpkgApplocalDeps>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>ClangCL</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='dev|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>ClangCL</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="$(VCPKG)\scripts\buildsystems\msbuild\vcpkg.props" Condition="exists('$(VCPKG)\scripts\buildsystems\msbuild\vcpkg.props')" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <!-- Release builds into build\ next to the solution; dev (same compiler and optimisations as Release) keeps everything on the F: RAM disk for development and benchmarks -->
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>$(ProjectDir)build\</OutDir>
+    <IntDir>$(ProjectDir)build\obj\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='dev|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>F:\$(ProjectName)_dev\</OutDir>
+    <IntDir>F:\$(ProjectName)_dev\obj\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <AdditionalIncludeDirectories>$(IntDir);$(VCPKG)/installed\x64-windows\include;$(VCPKG)/installed\x64-windows\include\Imath;$(VCPKG)/installed\x64-windows\include\OpenEXR;$(ProjectDir)..\imgui_docking;$(ProjectDir)..\imgui_docking\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <ControlFlowGuard>false</ControlFlowGuard>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <RecognizeRestrictKeyword>true</RecognizeRestrictKeyword>
+      <AdditionalOptions>/bigobj /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PreprocessorDefinitions Condition="'$(IvStartupTiming)'=='1'">IV_STARTUP_TIMING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <DelayLoadDLLs>d3d12.dll;dxgi.dll;dcomp.dll;d3dcompiler_47.dll;turbojpeg.dll;shlwapi.dll;libwebp.dll;libwebpdemux.dll;lunasvg.dll;heif.dll;tiff.dll;deflate.dll;nfd.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <AdditionalDependencies>delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64' Or '$(Configuration)|$(Platform)'=='dev|x64'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <PreprocessorDefinitions>_SILENCE_CXX23_DENORM_DEPRECATION_WARNING;WIN32_LEAN_AND_MEAN;NOMINMAX;_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH;IMGUI_DEFINE_MATH_OPERATORS;IMATH_HALF_NO_LOOKUP_TABLE;NDEBUG;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(VCPKG)/installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="app.cpp" />
+    <ClCompile Include="display.cpp" />
+    <ClCompile Include="gpu.cpp" />
+    <ClCompile Include="image_bmp.cpp" />
+    <ClCompile Include="image_cr3.cpp" />
+    <ClCompile Include="image_gif.cpp" />
+    <ClCompile Include="image_color.cpp" />
+    <ClCompile Include="image_hdr.cpp" />
+    <ClCompile Include="image_heic.cpp" />
+    <ClCompile Include="image_ico.cpp" />
+    <ClCompile Include="image_io.cpp" />
+    <ClCompile Include="image_save.cpp" />
+    <ClCompile Include="image_svg.cpp" />
+    <ClCompile Include="image_jpeg.cpp" />
+    <ClCompile Include="image_png.cpp" />
+    <ClCompile Include="image_exr.cpp" />
+    <ClCompile Include="image_tga.cpp" />
+    <ClCompile Include="image_tiff.cpp" />
+    <ClCompile Include="image_webp.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="parallel.cpp" />
+    <ClCompile Include="yuv.cpp" />
+    <ClCompile Include="disposer.cpp" />
+    <ClCompile Include="prefetch.cpp" />
+    <ClCompile Include="registration.cpp" />
+    <ClCompile Include="metadata.cpp" />
+    <ClCompile Include="sequence.cpp" />
+    <ClCompile Include="streamer.cpp" />
+    <ClCompile Include="svg_view.cpp" />
+    <ClCompile Include="stb_impl.cpp" />
+    <ClCompile Include="..\imgui_docking\imgui.cpp" />
+    <ClCompile Include="..\imgui_docking\imgui_draw.cpp" />
+    <ClCompile Include="..\imgui_docking\imgui_tables.cpp" />
+    <ClCompile Include="..\imgui_docking\imgui_widgets.cpp" />
+    <ClCompile Include="..\imgui_docking\backends\imgui_impl_dx12.cpp" />
+    <ClCompile Include="..\imgui_docking\backends\imgui_impl_win32.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="app.h" />
+    <ClInclude Include="display.h" />
+    <ClInclude Include="gpu.h" />
+    <ClInclude Include="image_formats.h" />
+    <ClInclude Include="image_io.h" />
+    <ClInclude Include="image_save.h" />
+    <ClInclude Include="parallel.h" />
+    <ClInclude Include="yuv.h" />
+    <ClInclude Include="disposer.h" />
+    <ClInclude Include="image_exr.h" />
+    <ClInclude Include="prefetch.h" />
+    <ClInclude Include="registration.h" />
+    <ClInclude Include="metadata.h" />
+    <ClInclude Include="sequence.h" />
+    <ClInclude Include="sequence_parser.h" />
+    <ClInclude Include="startup_timing.h" />
+    <ClInclude Include="streamer.h" />
+    <ClInclude Include="svg_view.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="display_vs.hlsl">
+      <ShaderType>Vertex</ShaderType>
+      <ShaderModel>5.0</ShaderModel>
+      <EntryPointName>main</EntryPointName>
+      <VariableName>g_display_vs</VariableName>
+      <HeaderFileOutput>$(IntDir)%(Filename).h</HeaderFileOutput>
+      <ObjectFileOutput>
+      </ObjectFileOutput>
+      <AdditionalOptions>/O3 %(AdditionalOptions)</AdditionalOptions>
+    </FxCompile>
+    <FxCompile Include="display_ps.hlsl">
+      <ShaderType>Pixel</ShaderType>
+      <ShaderModel>5.0</ShaderModel>
+      <EntryPointName>main</EntryPointName>
+      <VariableName>g_display_ps</VariableName>
+      <HeaderFileOutput>$(IntDir)%(Filename).h</HeaderFileOutput>
+      <ObjectFileOutput>
+      </ObjectFileOutput>
+      <AdditionalOptions>/O3 %(AdditionalOptions)</AdditionalOptions>
+    </FxCompile>
+    <FxCompile Include="mips_cs.hlsl">
+      <ShaderType>Compute</ShaderType>
+      <ShaderModel>5.0</ShaderModel>
+      <EntryPointName>main</EntryPointName>
+      <VariableName>g_mips_cs</VariableName>
+      <HeaderFileOutput>$(IntDir)%(Filename).h</HeaderFileOutput>
+      <ObjectFileOutput>
+      </ObjectFileOutput>
+      <AdditionalOptions>/O3 %(AdditionalOptions)</AdditionalOptions>
+    </FxCompile>
+    <FxCompile Include="unpack_cs.hlsl">
+      <ShaderType>Compute</ShaderType>
+      <ShaderModel>5.0</ShaderModel>
+      <EntryPointName>main</EntryPointName>
+      <VariableName>g_unpack_cs</VariableName>
+      <HeaderFileOutput>$(IntDir)%(Filename).h</HeaderFileOutput>
+      <ObjectFileOutput>
+      </ObjectFileOutput>
+      <AdditionalOptions>/O3 %(AdditionalOptions)</AdditionalOptions>
+    </FxCompile>
+    <None Include="display.hlsli" />
+    <None Include="filter.hlsli" />
+    <None Include="res\ic_fluent_image_24_filled.svg" />
+    <None Include="res\make_icon.py" />
+    <Image Include="res\app.ico" />
+    <Image Include="res\fmt_exr.ico" />
+    <Image Include="res\fmt_png.ico" />
+    <Image Include="res\fmt_jpg.ico" />
+    <Image Include="res\fmt_hdr.ico" />
+    <Image Include="res\fmt_bmp.ico" />
+    <Image Include="res\fmt_tga.ico" />
+    <Image Include="res\fmt_cr3.ico" />
+    <Image Include="res\fmt_gif.ico" />
+    <Image Include="res\fmt_webp.ico" />
+    <Image Include="res\fmt_svg.ico" />
+    <Image Include="res\fmt_heic.ico" />
+    <Image Include="res\fmt_tif.ico" />
+    <Image Include="res\fmt_tx.ico" />
+    <None Include="res\make_format_icons.py" />
+    <ResourceCompile Include="image_viewer.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="$(VCPKG)\scripts\buildsystems\msbuild\vcpkg.targets" Condition="exists('$(VCPKG)\scripts\buildsystems\msbuild\vcpkg.targets')" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

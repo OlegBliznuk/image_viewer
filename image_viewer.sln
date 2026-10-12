@@ -1,0 +1,24 @@
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.10.12201.205 stable
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "image_viewer", "image_viewer.vcxproj", "{BE7B0284-9B12-46DD-9F73-4028B302AFF3}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		dev|x64 = dev|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BE7B0284-9B12-46DD-9F73-4028B302AFF3}.dev|x64.ActiveCfg = dev|x64
+		{BE7B0284-9B12-46DD-9F73-4028B302AFF3}.dev|x64.Build.0 = dev|x64
+		{BE7B0284-9B12-46DD-9F73-4028B302AFF3}.Release|x64.ActiveCfg = Release|x64
+		{BE7B0284-9B12-46DD-9F73-4028B302AFF3}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {70BC2FA3-24F1-4E96-8FBC-10E87A3A47E9}
+	EndGlobalSection
+EndGlobal
