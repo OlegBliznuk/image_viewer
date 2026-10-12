@@ -66,7 +66,7 @@
       <WarningLevel>Level3</WarningLevel>
       <PrecompiledHeader>
       </PrecompiledHeader>
-      <AdditionalIncludeDirectories>$(IntDir);$(VCPKG)/installed\x64-windows\include;$(VCPKG)/installed\x64-windows\include\Imath;$(VCPKG)/installed\x64-windows\include\OpenEXR;$(ProjectDir)..\imgui_docking;$(ProjectDir)..\imgui_docking\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(IntDir);$(VCPKG)/installed\x64-windows\include;$(VCPKG)/installed\x64-windows\include\Imath;$(VCPKG)/installed\x64-windows\include\OpenEXR;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <ControlFlowGuard>false</ControlFlowGuard>
@@ -131,12 +131,6 @@
     <ClCompile Include="streamer.cpp" />
     <ClCompile Include="svg_view.cpp" />
     <ClCompile Include="stb_impl.cpp" />
-    <ClCompile Include="..\imgui_docking\imgui.cpp" />
-    <ClCompile Include="..\imgui_docking\imgui_draw.cpp" />
-    <ClCompile Include="..\imgui_docking\imgui_tables.cpp" />
-    <ClCompile Include="..\imgui_docking\imgui_widgets.cpp" />
-    <ClCompile Include="..\imgui_docking\backends\imgui_impl_dx12.cpp" />
-    <ClCompile Include="..\imgui_docking\backends\imgui_impl_win32.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="app.h" />

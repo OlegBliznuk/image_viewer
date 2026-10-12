@@ -62,16 +62,10 @@ Numbered files in a folder open as a sequence with a timeline. **Save As** write
 3. Install the libraries:
 
    ```bat
-   vcpkg install openexr libjpeg-turbo libheif libwebp tiff[core,jpeg,lzma,zip,libdeflate] libdeflate lunasvg stb nativefiledialog-extended --triplet x64-windows
+   vcpkg install openexr libjpeg-turbo libheif libwebp tiff[core,jpeg,lzma,zip,libdeflate] libdeflate lunasvg stb nativefiledialog-extended imgui[dx12-binding,win32-binding] --triplet x64-windows
    ```
 
-4. Put the [Dear ImGui](https://github.com/ocornut/imgui) docking branch (tested with 1.92.9b) next to this repository:
-
-   ```bat
-   git clone -b docking https://github.com/ocornut/imgui ..\imgui_docking
-   ```
-
-5. Open `image_viewer.sln`, pick **Release | x64** and build, or from a developer prompt:
+4. Open `image_viewer.sln`, pick **Release | x64** and build, or from a developer prompt:
 
    ```bat
    msbuild image_viewer.sln -p:Configuration=Release -p:Platform=x64

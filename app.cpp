@@ -17,6 +17,7 @@
 #include <iterator>
 #include <numeric>
 
+#pragma comment(lib, "imgui.lib")
 #pragma comment(lib, "nfd.lib")
 
 namespace iv
@@ -125,7 +126,6 @@ namespace iv
 		ImGui::CreateContext();
 		ImGuiIO& io = ImGui::GetIO();
 		io.IniFilename = nullptr;
-		io.ConfigDpiScaleFonts = true;
 		ImGui::StyleColorsDark();
 		ImGuiStyle& style = ImGui::GetStyle();
 		style.WindowRounding = 0.0f;
@@ -1531,6 +1531,9 @@ namespace iv
 		{
 			const RECT* r = (const RECT*)lParam;
 			SetWindowPos(m_hwnd, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);
+			// fonts follow the new monitor's scale, as the docking branch's io.ConfigDpiScaleFonts did
+			if (ImGui::GetCurrentContext())
+				ImGui::GetStyle().FontScaleDpi = HIWORD(wParam) / 96.0f;
 			result = 0;
 			return true;
 		}
