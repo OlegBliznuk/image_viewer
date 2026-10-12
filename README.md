@@ -1,5 +1,7 @@
 # image_viewer
 
+![The image_viewer window](gui_example.jpg)
+
 My personal vibe-coded project to replace the old but fast ACDSee viewer for home use, and to bring proper **EXR** and **TX** support along the way.
 
 It is built for **the lowest possible latency and fast sequence playback**: images appear the moment the file is decoded, the wheel steps through a folder without waiting, and cached sequences play at hundreds of frames per second. It assumes a GPU with DirectX 12 (Windows) or Vulkan (Linux, planned).
