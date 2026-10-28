@@ -6,7 +6,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FONT = r'C:\Windows\Fonts\segoeuib.ttf'
 SMALL_FONT = r'C:\Windows\Fonts\tahomabd.ttf'
 # jpg, tga and tif take the label colours of ACDSee's icons, cr3 the colour of its CR2 icon
-COLORS = {'exr': (244, 149, 255), 'png': (166, 30, 34), 'jpg': (128, 128, 0), 'hdr': (250, 216, 72), 'bmp': (31, 78, 158), 'tga': (0, 128, 128), 'cr3': (177, 226, 255), 'gif': (30, 123, 58), 'webp': (124, 203, 90), 'svg': (74, 74, 74), 'heic': (52, 50, 140), 'tif': (0, 0, 128), 'tx': (230, 120, 20)}
+COLORS = {'exr': (244, 149, 255), 'png': (166, 30, 34), 'jpg': (128, 128, 0), 'hdr': (250, 216, 72), 'bmp': (31, 78, 158), 'tga': (0, 128, 128), 'cr3': (177, 226, 255), 'gif': (30, 123, 58), 'webp': (124, 203, 90), 'svg': (74, 74, 74), 'heic': (52, 50, 140), 'tif': (0, 0, 128), 'tx': (230, 120, 20), 'pic': (200, 200, 200)}
 FOLD = (253, 255, 255, 255)
 SIZES = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256]
 S = 1024

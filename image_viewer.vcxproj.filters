@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <ClCompile Include="adjust.cpp" />
+    <ClCompile Include="adjust_ui.cpp" />
     <ClCompile Include="app.cpp" />
     <ClCompile Include="display.cpp" />
     <ClCompile Include="gpu.cpp" />
@@ -13,10 +15,14 @@
     <ClCompile Include="image_ico.cpp" />
     <ClCompile Include="image_io.cpp" />
     <ClCompile Include="image_save.cpp" />
+    <ClCompile Include="picture.cpp" />
+    <ClCompile Include="video_encoder.cpp" />
+    <ClCompile Include="export.cpp" />
     <ClCompile Include="image_svg.cpp" />
     <ClCompile Include="image_jpeg.cpp" />
     <ClCompile Include="image_png.cpp" />
     <ClCompile Include="image_exr.cpp" />
+    <ClCompile Include="image_pic.cpp" />
     <ClCompile Include="image_tga.cpp" />
     <ClCompile Include="image_tiff.cpp" />
     <ClCompile Include="image_webp.cpp" />
@@ -33,12 +39,17 @@
     <ClCompile Include="stb_impl.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="adjust.h" />
+    <ClInclude Include="adjust_ui.h" />
     <ClInclude Include="app.h" />
     <ClInclude Include="display.h" />
     <ClInclude Include="gpu.h" />
     <ClInclude Include="image_formats.h" />
     <ClInclude Include="image_io.h" />
     <ClInclude Include="image_save.h" />
+    <ClInclude Include="picture.h" />
+    <ClInclude Include="video_encoder.h" />
+    <ClInclude Include="export.h" />
     <ClInclude Include="parallel.h" />
     <ClInclude Include="yuv.h" />
     <ClInclude Include="disposer.h" />

@@ -49,6 +49,19 @@ namespace iv
 		}
 	}
 
+	// where an encoded video frame's 4:2:0 samples go: Y rows, then Cb and Cr cStep bytes apart (NV12: Cr = Cb + 1, step 2; I420: separate planes, step 1)
+	struct Yuv420Target
+	{
+		uint8_t* y;
+		uint8_t* cb;
+		uint8_t* cr;
+		int yStride;
+		int cStride;
+		int cStep;
+	};
+	inline Yuv420Target Nv12Target(uint8_t* p, int w, int h) { return { p, p + (size_t)w * h, p + (size_t)w * h + 1, w, w, 2 }; }
+	inline Yuv420Target I420Target(uint8_t* p, int w, int h) { return { p, p + (size_t)w * h, p + (size_t)w * h * 5 / 4, w, w / 2, 1 }; }
+
 	// bytes of a frame of stored size w x h
 	uint64_t YuvFrameSize(int w, int h, const YuvShape& s);
 	// writes the header with the plane offsets; the planes follow it

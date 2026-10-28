@@ -22,9 +22,10 @@ It is built for **the lowest possible latency and fast sequence playback**: imag
 | GIF | `.gif` | still and animated |
 | SVG | `.svg` | re-rendered sharp at every zoom |
 | BMP, TGA | `.bmp` `.tga` | |
+| Softimage PIC | `.pic` | 8 and 16 bit, all three encodings, alpha in its own channel packet |
 | Icons, cursors | `.ico` `.cur` | every entry as a frame |
 
-Numbered files in a folder open as a sequence with a timeline. **Save As** writes EXR, HDR, PNG, JPEG, BMP, TGA, WebP, ICO and TIFF.
+Numbered files in a folder open as a sequence with a timeline. Colour adjustments in floating windows: **Grade** reproducing Nuke's Grade node on the scene-linear values, and **Levels**, **Curves**, **Color Balance** and **Hue/Saturation** following GIMP's published maths on the displayed picture; they show live and go into Save As and Export. **Save As** writes EXR, HDR, PNG, JPEG, BMP, TGA, WebP, ICO and TIFF. **Export Video** writes a sequence or animation as it looks on screen to an MP4: H.265 or H.264 through the encoders Windows provides (the GPU's hardware encoder first), or AV1 through SVT-AV1 for the smallest files; no ffmpeg needed.
 
 ## Usage
 
@@ -41,11 +42,14 @@ Numbered files in a folder open as a sequence with a timeline. **Save As** write
 | Middle click, F11 | full screen (Esc leaves it) |
 | F / H | fit / actual size |
 | Space | play / pause a sequence |
-| Left / Right, Home / End | step frames, first / last frame |
+| Left / Right, Home / End | step frames, first / last frame of the play range (set in the boxes at the timeline's ends or by dragging its brackets) |
 | R | real-time playback (uncapped, every frame) |
 | A | toggle ACES / sRGB view |
 | Page Up / Page Down | previous / next channel (the wheel over the channel box works too) |
 | I | metadata (EXIF, EXR header, ...) |
+| E | export the sequence as an MP4 video |
+| G | Grade window (Nuke's key) |
+| Ctrl+L, Ctrl+M, Ctrl+B, Ctrl+U | Levels, Curves, Color Balance, Hue/Saturation windows (Photoshop's keys); Esc closes the focused one |
 | Ctrl+O, Ctrl+Shift+S | open, save as |
 
 ## Building
@@ -64,7 +68,7 @@ Numbered files in a folder open as a sequence with a timeline. **Save As** write
 3. Install the libraries:
 
    ```bat
-   vcpkg install openexr libjpeg-turbo libheif libwebp tiff[core,jpeg,lzma,zip,libdeflate] libdeflate lunasvg stb nativefiledialog-extended imgui[dx12-binding,win32-binding] --triplet x64-windows
+   vcpkg install openexr libjpeg-turbo libheif libwebp tiff[core,jpeg,lzma,zip,libdeflate] libdeflate lunasvg stb nativefiledialog-extended imgui[dx12-binding,win32-binding] svt-av1 --triplet x64-windows
    ```
 
 4. Open `image_viewer.sln`, pick **Release | x64** and build, or from a developer prompt:

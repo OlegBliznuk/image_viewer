@@ -14,7 +14,7 @@
 
 namespace iv
 {
-	enum class FileKind { Exr, Png, Jpeg, Bmp, Tga, Hdr, Cr3, Gif, Webp, Svg, Ico, Heic, Tiff, Count };
+	enum class FileKind { Exr, Png, Jpeg, Bmp, Tga, Hdr, Cr3, Gif, Webp, Svg, Ico, Heic, Tiff, Pic, Count };
 
 	// one supported extension; Explorer and the Open dialog take the name, DefaultIcon the icon resource (0: the file is its own icon)
 	struct FormatDesc

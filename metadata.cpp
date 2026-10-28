@@ -19,6 +19,7 @@ namespace iv
 {
 	namespace
 	{
+		using fmt::Be16;
 		using fmt::Be32;
 		using fmt::Le16;
 		using fmt::Le32;
@@ -901,6 +902,33 @@ namespace iv
 			}
 		}
 
+		void Pic(Sink& s, const uint8_t* d, size_t n)
+		{
+			if (n < 104 || Be32(d) != 0x5380F634)
+				return;
+			auto real = [&](size_t o) { const uint32_t b = Be32(d + o); float f; memcpy(&f, &b, 4); return (double)f; };
+			static constexpr Named fields[] = { { 0, "none" }, { 1, "odd" }, { 2, "even" }, { 3, "full frame" } };
+			static constexpr Named encodings[] = { { 0, "uncompressed" }, { 1, "run-length" }, { 2, "mixed run-length" } };
+			s.Section("Softimage PIC");
+			s.Add("Version", Number(real(4)));
+			if (d[8])
+				s.Add("Comment", Text(d + 8, 80));
+			s.Add("Pixel aspect", Number(real(96)));
+			s.Add("Fields", Name(fields, Be16(d + 100)));
+			std::string packets;
+			for (size_t o = 104; o + 4 <= n && o <= 116; o += 4)
+			{
+				std::string chans;
+				for (int c = 0; c < 4; ++c)
+					if (d[o + 3] & (0x80 >> c))
+						chans += "RGBA"[c];
+				packets += (packets.empty() ? "" : ", ") + chans + Fmt(" %d-bit ", d[o + 1]) + Name(encodings, d[o + 2] & 3);
+				if (!d[o])
+					break;
+			}
+			s.Add("Channel packets", packets);
+		}
+
 		void Ico(Sink& s, const uint8_t* d, size_t n)
 		{
 			if (n < 6)
@@ -1115,6 +1143,7 @@ namespace iv
 				case FileKind::Hdr: Hdr(s, m.data, m.size); break;
 				case FileKind::Bmp: Bmp(s, m.data, m.size); break;
 				case FileKind::Tga: Tga(s, m.data, m.size); break;
+				case FileKind::Pic: Pic(s, m.data, m.size); break;
 				case FileKind::Ico: Ico(s, m.data, m.size); break;
 				case FileKind::Svg: Svg(s, m.data, m.size); break;
 				default: break;

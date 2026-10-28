@@ -1,6 +1,7 @@
 #include "app.h"
 #include "image_formats.h"
 #include "image_save.h"
+#include "picture.h"
 #include "sequence.h"
 
 #include "imgui_impl_dx12.h"
@@ -237,6 +238,8 @@ namespace iv
 
 	void App::Shutdown()
 	{
+		// it reads the streamer's cache buffers, which go with the GPU
+		m_export.Stop();
 		JoinFirstFrame();
 		if (m_gpuThread.joinable())
 		{
@@ -322,6 +325,7 @@ namespace iv
 		m_files = files;
 		m_frameNumbers = numbers;
 		m_cur = index;
+		m_rangeFirst = 0, m_rangeLast = (int)files.size() - 1;
 		m_shown = -1;
 		m_playing = false;
 		m_error.clear();
@@ -394,7 +398,12 @@ namespace iv
 	{
 		if (!m_hwnd || m_baseTitle.empty())
 			return;
-		const std::wstring title = LoadingVisible() ? m_baseTitle + L"   " + ProgressText(EstimatedProgress(Now() - m_loadStart, m_loadBytes, m_info.kind)) : m_baseTitle;
+		std::wstring title = LoadingVisible() ? m_baseTitle + L"   " + ProgressText(EstimatedProgress(Now() - m_loadStart, m_loadBytes, m_info.kind)) : m_baseTitle;
+		if (m_export.Running())
+		{
+			const VideoExport::Status s = m_export.Get();
+			title += L"   exporting " + std::to_wstring(s.done) + L"/" + std::to_wstring(s.total);
+		}
 		if (title != m_titleShown)
 			SetWindowTextW(m_hwnd, title.c_str()), m_titleShown = title;
 	}
@@ -414,7 +423,7 @@ namespace iv
 	void App::ActivateFiles(const uint8_t* seed, CacheBuffer* adopt)
 	{
 		m_display.SetLayout(m_gpu, m_layout);
-		m_streamer.Reset(m_files, m_info.kind, m_info.views[m_view], m_layout, m_cacheBudget, m_cur, m_info.frames > 1, Par(0), seed, adopt);
+		m_streamer.Reset(m_files, m_info.kind, m_info.views[m_view], m_layout, m_cacheBudget, m_cur, m_rangeFirst, m_rangeLast, m_info.frames > 1, Par(0), seed, adopt);
 	}
 
 	void App::ApplyView(int view)
@@ -552,6 +561,8 @@ namespace iv
 				timeout = 10;
 			else if (m_loading && !m_playing)
 				timeout = 40;
+			else if (m_export.Busy() || m_histogramPending)
+				timeout = 50;
 			else if (!m_playing && m_quietFrames >= 3 && GImGui->InputEventsQueue.Size == 0)
 				timeout = INFINITE;
 			else if (m_playing && m_realtime && IsSequence() && m_streamer.State(NextIndex()) != Streamer::kReady)
@@ -606,7 +617,13 @@ namespace iv
 		if (!m_fullscreen && IsSequence())
 			Timeline();
 		if (!m_fullscreen)
+		{
 			StatusBar(), MetadataWindow();
+			UpdateHistogram();
+			if (m_adjustUi.Draw(m_adjust, m_histogramValid ? &m_histogram : nullptr))
+				AdjustChanged();
+		}
+		ExportDialog();
 		ImGui::Render();
 		mark("frame: UI built");
 
@@ -647,6 +664,7 @@ namespace iv
 			UpdateSvgView(cmd, fence, completed);
 		if (m_files.empty() || m_overlayPath != m_files[m_cur] || m_shown != m_cur)
 			m_display.ClearOverlay();
+		m_display.SetAdjust(m_adjustConstants, fence);
 		m_display.Draw(cmd, MakeDrawParams(), fence, m_gpu.Width(), m_gpu.Height());
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd);
 		mark("frame: ImGui RenderDrawData (font texture upload on the first frame)");
@@ -725,13 +743,27 @@ namespace iv
 		m_streamer.SetPlayhead(m_cur);
 	}
 
+	// inside the play range, wrapping at its ends; from outside it, onto its first or last frame
 	void App::Step(int delta)
 	{
 		if (!IsSequence())
 			return;
 		m_playing = false;
+		const int len = m_rangeLast - m_rangeFirst + 1;
+		if (m_cur < m_rangeFirst || m_cur > m_rangeLast)
+			SetFrame(delta > 0 ? m_rangeFirst : m_rangeLast);
+		else
+			SetFrame(m_rangeFirst + ((m_cur - m_rangeFirst + delta) % len + len) % len);
+	}
+
+	void App::SetRange(int first, int last)
+	{
 		const int n = (int)m_files.size();
-		SetFrame(((m_cur + delta) % n + n) % n);
+		if (n == 0)
+			return;
+		m_rangeFirst = std::clamp(first, 0, n - 1);
+		m_rangeLast = std::clamp(last, m_rangeFirst, n - 1);
+		m_streamer.SetRange(m_rangeFirst, m_rangeLast);
 	}
 
 	// index in m_scan.Items of the item delta steps from the current one (-1 at the ends), listed by the current Sequences choice
@@ -949,10 +981,212 @@ namespace iv
 			return;
 		}
 		SetCursor(LoadCursorW(nullptr, IDC_WAIT));
-		const std::string err = SaveImage(path, m_layout, pixels.data(), MakeDrawParams(), Par((int)std::thread::hardware_concurrency()));
+		const std::string err = SaveImage(path, m_layout, pixels.data(), MakeDrawParams(), m_adjustState, Par((int)std::thread::hardware_concurrency()));
 		const std::string file = ToUtf8(std::filesystem::path(path).filename().wstring());
 		m_notice = err.empty() ? "saved " + file : std::string();
 		m_error = err.empty() ? std::string() : "save " + file + ": " + err;
+	}
+
+	void App::OpenExportDialog()
+	{
+		if (!IsSequence() || m_export.Running())
+			return;
+		if (!m_encodersListed)
+		{
+			SetCursor(LoadCursorW(nullptr, IDC_WAIT));
+			m_encoders = ListVideoEncoders(m_encoderError);
+			m_encodersListed = true;
+		}
+		m_exportFirst = m_rangeFirst, m_exportLast = m_rangeLast;
+		m_exportOpen = true;
+	}
+
+	// File > Export Video: the settings, then the save dialog; a modal progress window while the export thread runs, its result in the status bar
+	void App::ExportDialog()
+	{
+		VideoExport::Status result;
+		if (m_export.TakeResult(result))
+		{
+			if (result.cancelled)
+				m_notice = "export cancelled", m_error.clear();
+			else if (!result.error.empty())
+				m_error = "export " + m_exportName + ": " + result.error, m_notice.clear();
+			else
+			{
+				std::error_code ec;
+				char text[192];
+				snprintf(text, sizeof(text), "exported %s: %d frames, %.1f MB in %.1f s", m_exportName.c_str(), result.done, std::filesystem::file_size(m_exportPath, ec) / 1e6, result.seconds);
+				m_notice = text, m_error.clear();
+			}
+		}
+		const float em = ImGui::GetFontSize();
+		const ImVec2 centre = ImGui::GetMainViewport()->GetCenter();
+		if (m_exportOpen && !ImGui::IsPopupOpen("Export Video"))
+			ImGui::OpenPopup("Export Video");
+		ImGui::SetNextWindowPos(centre, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+		bool start = false;
+		if (ImGui::BeginPopupModal("Export Video", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
+		{
+			// one entry per codec: the encoder Media Foundation takes for it (hardware first)
+			std::vector<const VideoEncoderDesc*> codecs;
+			for (const VideoEncoderDesc& e : m_encoders)
+				if (std::none_of(codecs.begin(), codecs.end(), [&](const VideoEncoderDesc* c) { return c->codec == e.codec; }))
+					codecs.push_back(&e);
+			const VideoEncoderDesc* chosen = nullptr;
+			for (const VideoEncoderDesc* c : codecs)
+				if (c->codec == m_exportCodec)
+					chosen = c;
+			if (!chosen && !codecs.empty())
+				chosen = codecs.front(), m_exportCodec = chosen->codec;
+			auto codecLabel = [](const VideoEncoderDesc* c) { return std::string(c->codec == VideoCodec::Hevc ? "H.265 / HEVC" : c->codec == VideoCodec::H264 ? "H.264 / AVC" : "AV1") + "   " + c->name + (c->hardware ? "" : " (software)"); };
+			if (!chosen)
+				ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.35f, 1.0f), "%s", m_encoderError.empty() ? "No H.265 or H.264 encoder is installed." : m_encoderError.c_str());
+			else
+			{
+				const float w = em * 24.0f;
+				ImGui::SetNextItemWidth(w);
+				if (ImGui::BeginCombo("Codec", codecLabel(chosen).c_str()))
+				{
+					for (const VideoEncoderDesc* c : codecs)
+						if (ImGui::Selectable(codecLabel(c).c_str(), c == chosen))
+							m_exportCodec = c->codec;
+					ImGui::EndCombo();
+				}
+				ImGui::SetNextItemWidth(w);
+				ImGui::SliderInt("Quality", &m_exportQuality, 1, 100);
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("the encoder's quality target; the file size follows the content");
+				const int scales[3] = { 1, 2, 4 };
+				const char* sizes[3] = { "Full", "Half", "Quarter" };
+				auto sizeLabel = [&](int i) { return std::string(sizes[i]) + "   " + std::to_string(VideoSize(m_layout.width, scales[i])) + " x " + std::to_string(VideoSize(m_layout.height, scales[i])); };
+				const int si = m_exportScale == 4 ? 2 : m_exportScale == 2 ? 1 : 0;
+				ImGui::SetNextItemWidth(w);
+				if (ImGui::BeginCombo("Size", sizeLabel(si).c_str()))
+				{
+					for (int i = 0; i < 3; ++i)
+						if (ImGui::Selectable(sizeLabel(i).c_str(), i == si))
+							m_exportScale = scales[i];
+					ImGui::EndCombo();
+				}
+				// the range in the timeline's frame numbers
+				auto indexOf = [&](int number) { return std::clamp((int)(std::lower_bound(m_frameNumbers.begin(), m_frameNumbers.end(), number) - m_frameNumbers.begin()), 0, (int)m_frameNumbers.size() - 1); };
+				int from = m_frameNumbers[m_exportFirst], to = m_frameNumbers[m_exportLast];
+				ImGui::AlignTextToFramePadding();
+				ImGui::TextUnformatted("Frames");
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth(em * 5.0f);
+				if (ImGui::InputInt("##from", &from, 0, 0))
+					m_exportFirst = indexOf(from);
+				ImGui::SameLine();
+				ImGui::TextUnformatted("to");
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth(em * 5.0f);
+				if (ImGui::InputInt("##to", &to, 0, 0))
+					m_exportLast = indexOf(to);
+				m_exportLast = std::max(m_exportLast, m_exportFirst);
+				double seconds = 0.0;
+				for (int i = m_exportFirst; i <= m_exportLast; ++i)
+					seconds += FramePeriod(i);
+				const std::string rate = m_fileTiming ? std::string("the file's frame times") : std::to_string(m_fps) + " fps";
+				ImGui::SameLine();
+				ImGui::TextDisabled("%d frames, %.2f s, %s", m_exportLast - m_exportFirst + 1, seconds, rate.c_str());
+				const int outW = VideoSize(m_layout.width, m_exportScale), outH = VideoSize(m_layout.height, m_exportScale);
+				if (m_exportCodec == VideoCodec::H264 && std::max(outW, outH) > 4096)
+					ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "H.264 encoders stop at 4096 pixels: pick H.265 or a smaller size");
+				if (m_exportCodec == VideoCodec::Av1 && std::min(outW, outH) < 64)
+					ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "AV1 needs at least 64 x 64 pixels");
+				if (m_exportCodec == VideoCodec::Av1)
+					ImGui::TextDisabled("AV1: smallest files, encoded on the CPU; Windows' own players need the free AV1 Video Extension");
+				ImGui::TextDisabled("as on screen: exposure, view transform, channel and adjustments");
+			}
+			ImGui::Separator();
+			ImGui::BeginDisabled(!chosen);
+			const bool enter = !ImGui::GetIO().WantTextInput && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false));
+			if ((ImGui::Button("Export...", ImVec2(em * 6.0f, 0.0f)) || enter) && chosen)
+				start = true, m_exportOpen = false;
+			ImGui::EndDisabled();
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel", ImVec2(em * 6.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+				m_exportOpen = false;
+			if (!m_exportOpen)
+				ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
+		if (start)
+			StartExport(m_exportCodec);
+
+		if (m_export.Running() && !ImGui::IsPopupOpen("Exporting Video"))
+			ImGui::OpenPopup("Exporting Video");
+		ImGui::SetNextWindowPos(centre, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+		if (ImGui::BeginPopupModal("Exporting Video", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
+		{
+			const VideoExport::Status s = m_export.Get();
+			ImGui::TextUnformatted(m_exportName.c_str());
+			char text[32];
+			snprintf(text, sizeof(text), "%d / %d", s.done, s.total);
+			ImGui::ProgressBar(s.total ? (float)s.done / s.total : 0.0f, ImVec2(em * 24.0f, 0.0f), text);
+			if (s.done > 0 && s.seconds > 0.0)
+				ImGui::Text("%.1f fps, %.0f s left", s.done / s.seconds, (s.total - s.done) * s.seconds / s.done);
+			else
+				ImGui::TextDisabled("starting the encoder...");
+			if (ImGui::Button("Cancel", ImVec2(em * 6.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+				m_export.Cancel();
+			if (!s.running)
+				ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
+	}
+
+	// asks for the file, then hands the export thread a snapshot of the frames, their times and the picture settings on screen
+	void App::StartExport(VideoCodec codec)
+	{
+		const std::filesystem::path first(m_files[m_exportFirst]);
+		std::wstring stem = first.stem().wstring();
+		while (!stem.empty() && stem.back() >= L'0' && stem.back() <= L'9')
+			stem.pop_back();
+		while (!stem.empty() && (stem.back() == L'.' || stem.back() == L'_' || stem.back() == L'-' || stem.back() == L' '))
+			stem.pop_back();
+		const std::string name = ToUtf8(stem.empty() ? std::wstring(L"video") : stem) + ".mp4";
+		const std::string folder = ToUtf8(first.parent_path().wstring());
+		nfdu8filteritem_t filter = { "MP4 video", "mp4" };
+		nfdsavedialogu8args_t args = {};
+		args.filterList = &filter;
+		args.filterCount = 1;
+		args.defaultPath = folder.empty() ? nullptr : folder.c_str();
+		args.defaultName = name.c_str();
+		args.parentWindow = { NFD_WINDOW_HANDLE_TYPE_WINDOWS, m_hwnd };
+		nfdu8char_t* out = nullptr;
+		if (NFD_SaveDialogU8_With(&out, &args) != NFD_OKAY || !out)
+			return;
+		std::filesystem::path path(FromUtf8(out));
+		NFD_FreePathU8(out);
+		if (_wcsicmp(path.extension().c_str(), L".mp4") != 0)
+			path += L".mp4";
+		ExportJob job;
+		job.path = path.wstring();
+		for (int i = m_exportFirst; i <= m_exportLast; ++i)
+			job.files.push_back(m_files[i]), job.indices.push_back(i), job.durations.push_back(FramePeriod(i));
+		job.kind = m_info.kind;
+		job.view = m_info.views[m_view];
+		job.layout = m_layout;
+		job.multiFrame = m_info.frames > 1;
+		job.params = MakeDrawParams();
+		job.adjust = m_adjustState;
+		job.scale = m_exportScale;
+		VideoSettings& v = job.video;
+		v.codec = codec;
+		v.width = VideoSize(m_layout.width, m_exportScale), v.height = VideoSize(m_layout.height, m_exportScale);
+		const double seconds = std::accumulate(job.durations.begin(), job.durations.end(), 0.0);
+		if (m_fileTiming && seconds > 0.0)
+			v.fpsNum = (uint32_t)std::max(1LL, std::llround(1000.0 * job.files.size() / seconds)), v.fpsDen = 1000;
+		else
+			v.fpsNum = (uint32_t)std::clamp(m_fps, 1, 1000), v.fpsDen = 1;
+		v.quality = m_exportQuality;
+		v.gop = std::max(1, (int)std::lround(2.0 * v.fpsNum / v.fpsDen));
+		m_playing = false;
+		m_exportPath = job.path;
+		m_exportName = ToUtf8(path.filename().wstring());
+		m_export.Start(std::move(job), &m_streamer, m_streamer.Generation(), Par((int)std::thread::hardware_concurrency()));
 	}
 
 	void App::FitView()
@@ -1011,26 +1245,43 @@ namespace iv
 	void App::Hotkeys()
 	{
 		const ImGuiIO& io = ImGui::GetIO();
-		if (io.WantTextInput)
+		// the export dialogs keep the files, view and frames as the export took them
+		if (io.WantTextInput || m_exportOpen || m_export.Running())
 			return;
 		if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_O))
 			OpenDialog();
 		if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S) && m_shown >= 0)
 			SaveDialog();
+		// Photoshop's adjustment keys
+		if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_L))
+			m_adjustUi.Toggle(AdjustTool::Levels);
+		if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_M))
+			m_adjustUi.Toggle(AdjustTool::Curves);
+		if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_B))
+			m_adjustUi.Toggle(AdjustTool::Balance);
+		if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_U))
+			m_adjustUi.Toggle(AdjustTool::HueSat);
 		if (io.KeyMods != ImGuiMod_None)
 			return;
-		// Esc closes an open menu or combo first
+		// Esc closes an open menu or combo first, then a focused adjustment window
 		if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
 		{
-			if (m_fullscreen)
+			if (m_adjustUi.Focused() >= 0 && !m_fullscreen)
+				m_adjustUi.Close((AdjustTool)m_adjustUi.Focused());
+			else if (m_fullscreen)
 				m_fullscreenToggle = true;
 			else
 				PostMessageW(m_hwnd, WM_CLOSE, 0, 0);
 		}
+		// Nuke's Grade key
+		if (ImGui::IsKeyPressed(ImGuiKey_G, false))
+			m_adjustUi.Toggle(AdjustTool::Grade);
 		if (ImGui::IsKeyPressed(ImGuiKey_F11, false))
 			m_fullscreenToggle = true;
 		if (ImGui::IsKeyPressed(ImGuiKey_I, false) && !m_files.empty())
 			m_showMeta = !m_showMeta;
+		if (ImGui::IsKeyPressed(ImGuiKey_E, false) && IsSequence() && m_shown >= 0)
+			OpenExportDialog();
 		if (ImGui::IsKeyPressed(ImGuiKey_F, false))
 			FitView();
 		if (ImGui::IsKeyPressed(ImGuiKey_H, false))
@@ -1050,9 +1301,9 @@ namespace iv
 		if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
 			Step(1);
 		if (ImGui::IsKeyPressed(ImGuiKey_Home, false) && IsSequence())
-			m_playing = false, SetFrame(0);
+			m_playing = false, SetFrame(m_rangeFirst);
 		if (ImGui::IsKeyPressed(ImGuiKey_End, false) && IsSequence())
-			m_playing = false, SetFrame((int)m_files.size() - 1);
+			m_playing = false, SetFrame(m_rangeLast);
 	}
 
 	void App::MenuBar()
@@ -1065,6 +1316,8 @@ namespace iv
 				OpenDialog();
 			if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S", false, m_shown >= 0))
 				SaveDialog();
+			if (ImGui::MenuItem("Export Video...", "E", false, IsSequence() && m_shown >= 0 && !m_export.Running()))
+				OpenExportDialog();
 			if (ImGui::MenuItem("Metadata", "I", m_showMeta, !m_files.empty()))
 				m_showMeta = !m_showMeta;
 			ImGui::Separator();
@@ -1083,7 +1336,46 @@ namespace iv
 				m_fullscreenToggle = true;
 			ImGui::EndMenu();
 		}
+		if (ImGui::BeginMenu("Adjust"))
+		{
+			for (int t = 0; t < (int)AdjustTool::Count; ++t)
+				if (ImGui::MenuItem(AdjustToolName((AdjustTool)t), AdjustToolShortcut((AdjustTool)t), m_adjustUi.IsOpen((AdjustTool)t)))
+					m_adjustUi.Toggle((AdjustTool)t);
+			ImGui::Separator();
+			if (ImGui::MenuItem("Reset All", nullptr, false, !(m_adjust == ColorAdjust())))
+				m_adjust = ColorAdjust(), AdjustChanged();
+			ImGui::EndMenu();
+		}
 		ImGui::EndMainMenuBar();
+	}
+
+	void App::AdjustChanged()
+	{
+		m_adjustState = CompileAdjust(m_adjust);
+		PackAdjust(m_adjustState, m_adjustConstants);
+		m_adjustVersion++;
+	}
+
+	// what Levels and Curves show: the shown frame's displayed values, sampled on about a million pixels; while dragging at most 20 times a second, while playing 4
+	void App::UpdateHistogram()
+	{
+		m_histogramPending = false;
+		if (!m_adjustUi.WantsHistogram() || m_shown < 0)
+			return;
+		if (m_histogramValid && m_histShown == m_shown && m_histVersion == m_adjustVersion && m_histExposure == m_exposure && m_histTransform == m_viewTransform && m_histView == m_view)
+			return;
+		const double now = Now();
+		if (now - m_histogramTime < (m_playing ? 0.25 : 0.05))
+		{
+			m_histogramPending = true;
+			return;
+		}
+		const DrawParams p = MakeDrawParams();
+		const Parallel par = Par((int)std::thread::hardware_concurrency());
+		if (!m_streamer.WithFrame(m_shown, [&](const uint8_t* data) { const SourceRows src(m_layout, data, p); ComputeHistogram(src, m_adjustState, 1 << 20, m_histogram, par); }))
+			return;
+		m_histogramValid = true, m_histogramTime = now;
+		m_histShown = m_shown, m_histVersion = m_adjustVersion, m_histExposure = m_exposure, m_histTransform = m_viewTransform, m_histView = m_view;
 	}
 
 	// the shown file's metadata (File > Metadata, I), read again when another file shows but not while playing, so playback never waits on header reads
@@ -1266,7 +1558,7 @@ namespace iv
 		const float em = ImGui::GetFontSize();
 		const int n = (int)m_files.size();
 		if (ImGui::Button("|<"))
-			m_playing = false, SetFrame(0);
+			m_playing = false, SetFrame(m_rangeFirst);
 		ImGui::SameLine();
 		if (ImGui::ArrowButton("##back", ImGuiDir_Left))
 			Step(-1);
@@ -1278,25 +1570,63 @@ namespace iv
 			Step(1);
 		ImGui::SameLine();
 		if (ImGui::Button(">|"))
-			m_playing = false, SetFrame(n - 1);
+			m_playing = false, SetFrame(m_rangeLast);
 		ImGui::SameLine();
 
-		// frame bar: click or drag to scrub
-		const float barW = std::max(ImGui::GetContentRegionAvail().x - em * 21.0f, em * 6.0f);
+		// the play range in frame numbers, in boxes as wide as the widest number plus a digit: a typed number between frames takes the frames inside it
+		char widest[16];
+		snprintf(widest, sizeof(widest), "%d0", std::abs(m_frameNumbers.front()) > std::abs(m_frameNumbers.back()) ? m_frameNumbers.front() : m_frameNumbers.back());
+		const float boxW = ImGui::CalcTextSize(widest).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+		int first = m_frameNumbers[m_rangeFirst];
+		ImGui::SetNextItemWidth(boxW);
+		if (ImGui::InputInt("##rangeFirst", &first, 0, 0))
+			SetRange(std::min(std::clamp((int)(std::lower_bound(m_frameNumbers.begin(), m_frameNumbers.end(), first) - m_frameNumbers.begin()), 0, n - 1), m_rangeLast), m_rangeLast);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("play range start");
+		ImGui::SameLine();
+
+		// frame bar: click or drag to scrub; the brackets at the play range's ends drag it
+		const float barW = std::max(ImGui::GetContentRegionAvail().x - em * 21.0f - boxW - ImGui::GetStyle().ItemSpacing.x, em * 6.0f);
 		const ImVec2 r0 = ImGui::GetCursorScreenPos(), r1(r0.x + barW, r0.y + ImGui::GetFrameHeight());
 		ImGui::InvisibleButton("##frames", r1 - r0);
-		// the playhead travels edge to edge: first frame flush left, last frame flush right
-		const float hw = std::clamp(barW / n * 0.5f, 1.0f, em * 0.5f), step = (barW - 2.0f * hw) / (n - 1);
-		auto frameX = [&](int i) { return r0.x + hw + i * step; };
-		const int hoverIdx = std::clamp((int)std::lround((ImGui::GetIO().MousePos.x - r0.x - hw) / step), 0, n - 1);
+		// the playhead travels between the bracket margins: first frame flush with the left one, last frame with the right one
+		const float gw = em * 0.6f, hw = std::clamp((barW - 2.0f * gw) / n * 0.5f, 1.0f, em * 0.5f), step = (barW - 2.0f * gw - 2.0f * hw) / (n - 1);
+		auto frameX = [&](int i) { return r0.x + gw + hw + i * step; };
+		auto indexAt = [&](float x) { return std::clamp((int)std::lround((x - r0.x - gw - hw) / step), 0, n - 1); };
+		const float mx = ImGui::GetIO().MousePos.x, firstEdge = frameX(m_rangeFirst) - hw, lastEdge = frameX(m_rangeLast) + hw;
+		const bool hovered = ImGui::IsItemHovered(), active = ImGui::IsItemActive();
+		const int grab = mx >= firstEdge - gw && mx < firstEdge ? 0 : mx > lastEdge && mx <= lastEdge + gw ? 1 : -1;
+		const int overHandle = hovered && !active ? grab : -1;
+		const int hoverIdx = indexAt(mx);
 		if (ImGui::IsItemActivated())
-			m_playing = false;
-		if (ImGui::IsItemActive())
+		{
+			m_rangeDrag = grab;
+			m_rangeGrabDx = grab < 0 ? 0.0f : frameX(grab == 0 ? m_rangeFirst : m_rangeLast) - mx;
+			if (m_rangeDrag < 0)
+				m_playing = false;
+		}
+		if (ImGui::IsItemDeactivated())
+			m_rangeDrag = -1;
+		if (active && m_rangeDrag >= 0)
+		{
+			const int i = indexAt(mx + m_rangeGrabDx);
+			if (m_rangeDrag == 0)
+				SetRange(std::min(i, m_rangeLast), m_rangeLast);
+			else
+				SetRange(m_rangeFirst, std::max(i, m_rangeFirst));
+			ImGui::SetTooltip("%d", m_frameNumbers[m_rangeDrag == 0 ? m_rangeFirst : m_rangeLast]);
+		}
+		else if (active)
 			SetFrame(hoverIdx);
-		else if (ImGui::IsItemHovered())
+		else if (overHandle >= 0)
+			ImGui::SetTooltip("play range %s: %d", overHandle == 0 ? "start" : "end", m_frameNumbers[overHandle == 0 ? m_rangeFirst : m_rangeLast]);
+		else if (hovered)
 			ImGui::SetTooltip("%d", m_frameNumbers[hoverIdx]);
+		const int dragged = active ? m_rangeDrag : -1;
+		if (overHandle >= 0 || dragged >= 0)
+			ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
 		ImDrawList* dl = ImGui::GetWindowDrawList();
-		dl->AddRectFilled(r0, r1, ImGui::GetColorU32(ImGui::IsItemHovered() || ImGui::IsItemActive() ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg), ImGui::GetStyle().FrameRounding);
+		dl->AddRectFilled(r0, r1, ImGui::GetColorU32(hovered || active ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg), ImGui::GetStyle().FrameRounding);
 		dl->PushClipRect(r0, r1, true);
 
 		// ruler: minor ticks at half height, major ticks at full height, both on round frame numbers for the current pixels per frame
@@ -1340,6 +1670,22 @@ namespace iv
 			i = j;
 		}
 
+		// frames outside the play range shaded; its ends as brackets in the margins they leave
+		const ImU32 outside = ImGui::GetColorU32(ImGuiCol_WindowBg, 0.6f);
+		if (firstEdge > r0.x + gw)
+			dl->AddRectFilled(r0, ImVec2(firstEdge, r1.y), outside);
+		if (lastEdge < r1.x - gw)
+			dl->AddRectFilled(ImVec2(lastEdge, r0.y), r1, outside);
+		const float t = std::max(2.0f, std::floor(em * 0.25f));
+		for (int h = 0; h < 2; ++h)
+		{
+			const float edge = h == 0 ? firstEdge : lastEdge, dir = h == 0 ? 1.0f : -1.0f;
+			const ImU32 col = ImGui::GetColorU32(ImGuiCol_Text, overHandle == h || dragged == h ? 0.95f : 0.55f);
+			dl->AddRectFilled(ImVec2(std::min(edge, edge - dir * t), r0.y), ImVec2(std::max(edge, edge - dir * t), r1.y), col);
+			dl->AddRectFilled(ImVec2(std::min(edge - dir * t, edge + dir * t), r0.y), ImVec2(std::max(edge - dir * t, edge + dir * t), r0.y + t), col);
+			dl->AddRectFilled(ImVec2(std::min(edge - dir * t, edge + dir * t), r1.y - t), ImVec2(std::max(edge - dir * t, edge + dir * t), r1.y), col);
+		}
+
 		// playhead and its frame number
 		const float cx = frameX(m_cur);
 		dl->AddRectFilled(ImVec2(cx - hw, r0.y), ImVec2(cx + hw, r1.y), ImGui::GetColorU32(ImGuiCol_SliderGrabActive));
@@ -1355,6 +1701,13 @@ namespace iv
 		dl->AddText(ImVec2(tx, ty), ImGui::GetColorU32(ImGuiCol_Text), label);
 		dl->PopClipRect();
 
+		ImGui::SameLine();
+		int last = m_frameNumbers[m_rangeLast];
+		ImGui::SetNextItemWidth(boxW);
+		if (ImGui::InputInt("##rangeLast", &last, 0, 0))
+			SetRange(m_rangeFirst, std::max(std::clamp((int)(std::upper_bound(m_frameNumbers.begin(), m_frameNumbers.end(), last) - m_frameNumbers.begin()) - 1, 0, n - 1), m_rangeFirst));
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("play range end");
 		ImGui::SameLine();
 		ImGui::SetNextItemWidth(em * 4.0f);
 		const double animTime = m_fileTiming ? std::accumulate(m_info.delays.begin(), m_info.delays.end(), 0.0) : 0.0;
@@ -1415,6 +1768,16 @@ namespace iv
 			{
 				ImGui::SameLine(0.0f, em);
 				ImGui::TextDisabled("loaded in %.0f ms", m_lastOpenMs);
+			}
+			if (m_adjustState.Any())
+			{
+				const bool on[(int)AdjustTool::Count] = { m_adjustState.grade, m_adjustState.levels, m_adjustState.curves, m_adjustState.balance, m_adjustState.hueSat };
+				std::string tools;
+				for (int t = 0; t < (int)AdjustTool::Count; ++t)
+					if (on[t])
+						tools += (tools.empty() ? "" : ", ") + std::string(AdjustToolName((AdjustTool)t));
+				ImGui::SameLine(0.0f, em);
+				ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "[adjusted: %s]", tools.c_str());
 			}
 			const ImGuiIO& io = ImGui::GetIO();
 			const ImVec2 o(std::round(m_vpMin.x + m_origin.x), std::round(m_vpMin.y + m_origin.y));
@@ -1522,7 +1885,7 @@ namespace iv
 			std::wstring path(len, L'\0');
 			DragQueryFileW(drop, 0, path.data(), len + 1);
 			DragFinish(drop);
-			if (!path.empty())
+			if (!path.empty() && !m_export.Running())
 				Open(path);
 			result = 0;
 			return true;

@@ -1,6 +1,9 @@
 #pragma once
 
+#include "adjust_ui.h"
 #include "display.h"
+#include "export.h"
+#include "picture.h"
 #include "gpu.h"
 #include "image_io.h"
 #include "metadata.h"
@@ -80,6 +83,11 @@ namespace iv
 		double FramePeriod(int index) const;
 		void OpenDialog();
 		void SaveDialog();
+		void OpenExportDialog();
+		void ExportDialog();
+		void StartExport(VideoCodec codec);
+		void AdjustChanged();
+		void UpdateHistogram();
 		void FitView();
 		void ActualSize();
 		void ApplyPendingView();
@@ -88,7 +96,9 @@ namespace iv
 		float RowHeight() const;
 		float MenuHeight() const;
 		bool IsSequence() const { return m_files.size() > 1; }
-		int NextIndex() const { return (m_cur + 1) % (int)m_files.size(); }
+		// playback loops over the play range; from a frame outside it, it starts at the range's first frame
+		int NextIndex() const { return m_cur < m_rangeFirst || m_cur >= m_rangeLast ? m_rangeFirst : m_cur + 1; }
+		void SetRange(int first, int last);
 		DrawParams MakeDrawParams() const;
 		Parallel Par(int threads);
 
@@ -101,6 +111,7 @@ namespace iv
 		Gpu m_gpu;
 		Display m_display;
 		Streamer m_streamer;
+		VideoExport m_export;   // after the streamer it copies cached frames from
 		uint64_t m_cacheBudget = 0;
 
 		std::thread m_gpuThread;
@@ -126,7 +137,7 @@ namespace iv
 		std::wstring m_baseTitle;
 		std::wstring m_titleShown;
 		// typical decode speed per FileKind (bytes of file per second) for the estimated progress, refined by every load that takes long enough
-		double m_bytesPerSecond[(int)FileKind::Count] = { 150e6, 60e6, 60e6, 400e6, 400e6, 60e6, 150e6, 20e6, 30e6, 5e6, 50e6, 40e6, 200e6 };
+		double m_bytesPerSecond[(int)FileKind::Count] = { 150e6, 60e6, 60e6, 400e6, 400e6, 60e6, 150e6, 20e6, 30e6, 5e6, 50e6, 40e6, 200e6, 200e6 };
 		SvgView m_svgView;
 		SvgView::Request m_svgRequested;
 		std::wstring m_overlayPath;
@@ -152,6 +163,10 @@ namespace iv
 		Layout m_layout;
 		int m_cur = 0;
 		int m_shown = -1;
+		int m_rangeFirst = 0;   // the play range, indices into m_files
+		int m_rangeLast = 0;
+		int m_rangeDrag = -1;   // timeline handle being dragged: 0 first, 1 last
+		float m_rangeGrabDx = 0.0f;   // its frame's x minus the mouse x at the grab
 
 		bool m_playing = false;
 		bool m_realtime = false;
@@ -190,6 +205,36 @@ namespace iv
 		float m_savedZoom = 1.0f;
 		ImVec2 m_savedOrigin = ImVec2(0, 0);
 		WINDOWPLACEMENT m_savedPlacement = { sizeof(WINDOWPLACEMENT) };
+
+		// File > Export Video: the encoders are listed when the dialog first opens (Media Foundation loads then)
+		bool m_exportOpen = false;
+		bool m_encodersListed = false;
+		std::vector<VideoEncoderDesc> m_encoders;
+		std::string m_encoderError;
+		VideoCodec m_exportCodec = VideoCodec::Hevc;
+		int m_exportQuality = 85;
+		int m_exportScale = 1;
+		int m_exportFirst = 0;
+		int m_exportLast = 0;
+		std::wstring m_exportPath;
+		std::string m_exportName;
+
+		// colour adjustments (Adjust menu): what the windows edit, its compiled form for Save As / Export, the shader's copy
+		ColorAdjust m_adjust;
+		AdjustState m_adjustState;
+		AdjustConstants m_adjustConstants = {};
+		AdjustWindows m_adjustUi;
+		uint64_t m_adjustVersion = 0;
+		// what Levels and Curves show, recomputed when the frame, the adjustments or the view change
+		DisplayHistogram m_histogram;
+		bool m_histogramValid = false;
+		bool m_histogramPending = false;   // out of date but throttled: the idle loop wakes for it
+		double m_histogramTime = 0.0;
+		int m_histShown = -1;
+		uint64_t m_histVersion = 0;
+		float m_histExposure = 0.0f;
+		ViewTransform m_histTransform = ViewTransform::Srgb;
+		int m_histView = -1;
 
 		float m_exposure = 0.0f;
 		ViewTransform m_viewTransform = ViewTransform::Srgb;

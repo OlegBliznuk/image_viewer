@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #include "display_vs.h"
 #include "display_ps.h"
@@ -31,6 +32,8 @@ namespace iv
 		};
 
 		constexpr D3D12_RESOURCE_STATES kShaderRead = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+		constexpr UINT kAdjustSlices = 8;
+		constexpr UINT kAdjustStride = (sizeof(AdjustConstants) + 255) / 256 * 256;
 
 		D3D12_RESOURCE_BARRIER Barrier(ID3D12Resource* res, UINT subresource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after)
 		{
@@ -94,7 +97,7 @@ namespace iv
 	{
 		m_disposer = disposer;
 		D3D12_DESCRIPTOR_RANGE range = { D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, 0 };
-		D3D12_ROOT_PARAMETER params[2] = {};
+		D3D12_ROOT_PARAMETER params[3] = {};
 		params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 		params[0].Constants.Num32BitValues = sizeof(Constants) / 4;
 		params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
@@ -102,11 +105,30 @@ namespace iv
 		params[1].DescriptorTable.NumDescriptorRanges = 1;
 		params[1].DescriptorTable.pDescriptorRanges = &range;
 		params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-		if (!CreateRootSignature(gpu, { 2, params, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE }, m_rootSig))
+		params[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+		params[2].Descriptor.ShaderRegister = 1;
+		params[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+		if (!CreateRootSignature(gpu, { 3, params, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE }, m_rootSig))
 		{
 			err = "root signature creation failed";
 			return false;
 		}
+		const D3D12_HEAP_PROPERTIES upload = { D3D12_HEAP_TYPE_UPLOAD };
+		D3D12_RESOURCE_DESC bd = {};
+		bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+		bd.Width = (UINT64)kAdjustStride * kAdjustSlices;
+		bd.Height = 1;
+		bd.DepthOrArraySize = 1;
+		bd.MipLevels = 1;
+		bd.SampleDesc.Count = 1;
+		bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+		if (FAILED(gpu.device->CreateCommittedResource(&upload, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_adjust))) || FAILED(m_adjust->Map(0, nullptr, (void**)&m_adjustMapped)))
+		{
+			err = "adjustment buffer creation failed";
+			return false;
+		}
+		memset(m_adjustMapped, 0, (size_t)kAdjustStride * kAdjustSlices);
+		m_adjustVa = m_adjust->GetGPUVirtualAddress();
 
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
 		pso.pRootSignature = m_rootSig.Get();
@@ -231,6 +253,8 @@ namespace iv
 		m_unpackPso.Reset();
 		m_unpackRootSig.Reset();
 		m_staging.Reset();
+		m_adjust.Reset();
+		m_adjustMapped = nullptr;
 	}
 
 	void Display::SetLayout(Gpu& gpu, const Layout& layout)
@@ -486,6 +510,13 @@ namespace iv
 		m_overlay = pick;
 	}
 
+	void Display::SetAdjust(const AdjustConstants& a, uint64_t fence)
+	{
+		const UINT slice = (UINT)(fence % kAdjustSlices);
+		memcpy(m_adjustMapped + (size_t)slice * kAdjustStride, &a, sizeof(a));
+		m_adjustVa = m_adjust->GetGPUVirtualAddress() + (UINT64)slice * kAdjustStride;
+	}
+
 	void Display::Draw(ID3D12GraphicsCommandList* cmd, const DrawParams& p, uint64_t fence, UINT rtWidth, UINT rtHeight)
 	{
 		if (m_current >= 0)
@@ -546,6 +577,7 @@ namespace iv
 		cmd->SetPipelineState(m_pso.Get());
 		cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants) / 4, &k, 0);
 		cmd->SetGraphicsRootDescriptorTable(1, t.srv.gpu);
+		cmd->SetGraphicsRootConstantBufferView(2, m_adjustVa);
 		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 		cmd->DrawInstanced(4, 1, 0, 0);
 		t.lastUse = fence;

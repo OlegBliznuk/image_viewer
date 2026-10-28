@@ -1,5 +1,6 @@
 #include "image_save.h"
 #include "image_formats.h"
+#include "picture.h"
 
 #include <OpenEXR/ImfChannelList.h>
 #include <OpenEXR/ImfCompression.h>
@@ -27,123 +28,9 @@ namespace iv
 {
 	namespace
 	{
-		float SrgbToLinear(float c) { return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f); }
-		float LinearToSrgb(float c) { return c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f; }
-		float Saturate(float v) { return v > 0.0f ? (v < 1.0f ? v : 1.0f) : 0.0f; }
-
-		// display_ps.hlsl's AcesFitted
-		void AcesFitted(float* c)
-		{
-			float a[3] = { 0.59719f * c[0] + 0.35458f * c[1] + 0.04823f * c[2], 0.07600f * c[0] + 0.90834f * c[1] + 0.01566f * c[2], 0.02840f * c[0] + 0.13383f * c[1] + 0.83777f * c[2] };
-			for (float& v : a)
-				v = (v * (v + 0.0245786f) - 0.000090537f) / (v * (0.983729f * v + 0.4329510f) + 0.238081f);
-			c[0] = Saturate(1.60475f * a[0] - 0.53108f * a[1] - 0.07367f * a[2]);
-			c[1] = Saturate(-0.10208f * a[0] + 1.10813f * a[1] - 0.00605f * a[2]);
-			c[2] = Saturate(-0.00327f * a[0] - 0.07276f * a[1] + 1.07602f * a[2]);
-		}
-
-		// the frame's rows as linear RGBA in Rec.709 primaries with the channel view applied, as the shader samples them at 1:1
-		struct Source
-		{
-			const Layout& l;
-			const uint8_t* data;
-			const DrawParams& p;
-			const YuvReader yuv;
-			const bool yuvOk;
-			float lut8[256];
-			std::vector<float> lut16;
-
-			Source(const Layout& layout, const uint8_t* pixels, const DrawParams& params) : l(layout), data(pixels), p(params), yuv(layout.packing == Packing::Yuv ? pixels : nullptr), yuvOk(layout.packing == Packing::Yuv && yuv.Fits(layout.size, layout.width, layout.height))
-			{
-				for (int i = 0; i < 256; ++i)
-					lut8[i] = p.srgbIn ? SrgbToLinear(i / 255.0f) : i / 255.0f;
-				if (l.format == DXGI_FORMAT_R16G16B16A16_UNORM)
-				{
-					lut16.resize(65536);
-					for (int i = 0; i < 65536; ++i)
-						lut16[i] = p.srgbIn ? SrgbToLinear(i / 65535.0f) : i / 65535.0f;
-				}
-			}
-
-			void Row(int y, float* out) const
-			{
-				const uint8_t* row = data + (size_t)y * l.rowPitch;
-				const uint16_t* r16 = (const uint16_t*)row;
-				const int w = l.width;
-				if (l.packing == Packing::Yuv)
-					for (int x = 0; x < w; ++x)
-					{
-						uint8_t c[3] = {};
-						if (yuvOk)
-							yuv.Pixel(x, y, c);
-						for (int k = 0; k < 3; ++k)
-							out[x * 4 + k] = lut8[c[k]];
-						out[x * 4 + 3] = 1.0f;
-					}
-				if (l.packing == Packing::Rgb)
-					for (int x = 0; x < w; ++x)
-					{
-						const uint8_t* q = row + (size_t)x * l.bytesPerPixel;
-						for (int c = 0; c < 3; ++c)
-							out[x * 4 + c] = l.format == DXGI_FORMAT_R8G8B8A8_UNORM ? lut8[q[c]] : l.format == DXGI_FORMAT_R16G16B16A16_UNORM ? lut16[((const uint16_t*)q)[c]] : l.format == DXGI_FORMAT_R16G16B16A16_FLOAT ? imath_half_to_float(((const uint16_t*)q)[c]) : ((const float*)q)[c];
-						out[x * 4 + 3] = 1.0f;
-					}
-				switch (l.packing == Packing::Rgb || l.packing == Packing::Yuv ? DXGI_FORMAT_FORCE_UINT : l.packing == Packing::Rgbe ? DXGI_FORMAT_UNKNOWN : l.format)
-				{
-				case DXGI_FORMAT_FORCE_UINT:
-					break;
-				case DXGI_FORMAT_UNKNOWN:
-					for (int x = 0; x < w; ++x)
-						DecodeRgbe(row + x * 4, out + x * 4);
-					break;
-				case DXGI_FORMAT_R8G8B8A8_UNORM:
-					for (int i = 0; i < w * 4; ++i)
-						out[i] = (i & 3) == 3 ? row[i] / 255.0f : lut8[row[i]];
-					break;
-				case DXGI_FORMAT_R16G16B16A16_UNORM:
-					for (int i = 0; i < w * 4; ++i)
-						out[i] = (i & 3) == 3 ? r16[i] / 65535.0f : lut16[r16[i]];
-					break;
-				case DXGI_FORMAT_R16G16B16A16_FLOAT:
-					for (int i = 0; i < w * 4; ++i)
-						out[i] = imath_half_to_float(r16[i]);
-					break;
-				case DXGI_FORMAT_R32G32B32A32_FLOAT:
-					memcpy(out, row, (size_t)w * 16);
-					break;
-				case DXGI_FORMAT_R16_FLOAT:
-				case DXGI_FORMAT_R32_FLOAT:
-					for (int x = 0; x < w; ++x)
-					{
-						const float g = l.format == DXGI_FORMAT_R16_FLOAT ? imath_half_to_float(r16[x]) : ((const float*)row)[x];
-						out[x * 4] = out[x * 4 + 1] = out[x * 4 + 2] = g, out[x * 4 + 3] = 1.0f;
-					}
-					break;
-				default:
-					std::fill(out, out + (size_t)w * 4, 0.0f);
-					break;
-				}
-				for (int x = 0; x < w; ++x)
-				{
-					float* c = out + x * 4;
-					if (p.gray)
-					{
-						const float g = c[0] * p.mask[0] + c[1] * p.mask[1] + c[2] * p.mask[2] + c[3] * p.mask[3];
-						c[0] = c[1] = c[2] = g, c[3] = 1.0f;
-					}
-					else if (p.colorMatrix)
-					{
-						const float r = c[0], g = c[1], b = c[2];
-						for (int k = 0; k < 3; ++k)
-							c[k] = p.matrix[k * 3] * r + p.matrix[k * 3 + 1] * g + p.matrix[k * 3 + 2] * b;
-					}
-				}
-			}
-		};
-
-		// the whole frame as tight RGBA samples of `bytes` bytes: display values (exposure, view transform, display curve) for integers, linear floats otherwise;
-		// alpha tells whether any pixel is not opaque
-		std::vector<uint8_t> Convert(const Source& s, bool display, int bytes, bool& alpha, const Parallel& par)
+		// the whole frame as tight RGBA samples of `bytes` bytes: display values (grade, exposure, view transform, display curve, display adjustments) for integers,
+		// graded linear floats otherwise; alpha tells whether any pixel is not opaque
+		std::vector<uint8_t> Convert(const SourceRows& s, bool display, int bytes, bool& alpha, const AdjustState& adjust, const Parallel& par)
 		{
 			const int w = s.l.width, h = s.l.height;
 			std::vector<uint8_t> out((size_t)w * h * 4 * bytes);
@@ -161,14 +48,11 @@ namespace iv
 					{
 						float* c = &row[(size_t)x * 4];
 						translucent[part] |= c[3] < 0.9995f;
+						ApplyGrade(adjust, c);
 						if (!display)
 							continue;
-						for (int k = 0; k < 3; ++k)
-							c[k] *= gain;
-						if (s.p.view == ViewTransform::Aces)
-							AcesFitted(c);
-						for (int k = 0; k < 3; ++k)
-							c[k] = s.p.view == ViewTransform::Linear ? Saturate(c[k]) : LinearToSrgb(Saturate(c[k]));
+						DisplayEncode(c, gain, s.p.view);
+						ApplyDisplayAdjust(adjust, c);
 						c[3] = Saturate(c[3]);
 					}
 					uint8_t* o = out.data() + (size_t)y * w * 4 * bytes;
@@ -357,21 +241,21 @@ namespace iv
 		return !e.empty() && all.find(" " + e + " ") != std::string::npos;
 	}
 
-	std::string SaveImage(const std::wstring& path, const Layout& layout, const uint8_t* data, const DrawParams& p, const Parallel& par)
+	std::string SaveImage(const std::wstring& path, const Layout& layout, const uint8_t* data, const DrawParams& p, const AdjustState& adjust, const Parallel& par)
 	{
 		if (!data || layout.width <= 0 || layout.height <= 0)
 			return "nothing to save";
 		const std::wstring ext = Extension(path);
 		const int w = layout.width, h = layout.height;
 		const size_t pixels = (size_t)w * h;
-		const Source src(layout, data, p);
+		const SourceRows src(layout, data, p);
 		const bool floatSource = IsFloat(layout.format), deep = layout.format != DXGI_FORMAT_R8G8B8A8_UNORM;
 		bool alpha = false;
 		try
 		{
 			if (ext == L"exr" || ext == L"hdr" || ((ext == L"tif" || ext == L"tiff") && floatSource))
 			{
-				std::vector<uint8_t> px = Convert(src, false, 4, alpha, par);
+				std::vector<uint8_t> px = Convert(src, false, 4, alpha, adjust, par);
 				const float* f = (const float*)px.data();
 				if (ext == L"hdr")
 				{
@@ -411,7 +295,7 @@ namespace iv
 				return WriteTiff(path, (const uint8_t*)half.data(), w, h, channels, 16, true);
 			}
 			const bool sixteen = deep && (ext == L"png" || ext == L"tif" || ext == L"tiff");
-			std::vector<uint8_t> px = Convert(src, true, sixteen ? 2 : 1, alpha, par);
+			std::vector<uint8_t> px = Convert(src, true, sixteen ? 2 : 1, alpha, adjust, par);
 			const int bytes = sixteen ? 2 : 1;
 			if (ext == L"jpg" || ext == L"jpeg")
 			{

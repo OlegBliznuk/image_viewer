@@ -96,14 +96,20 @@ namespace iv
 		void StartWorkers();
 		void Stop();
 		// multiFrame: files repeats one multi-frame file, entry i is its frame i; the playhead frame comes copied from seed or as the decoded adopt buffer, taken over
-		void Reset(const std::vector<std::wstring>& files, FileKind kind, const ViewDesc& view, const Layout& layout, uint64_t budget, int playhead, bool multiFrame, const Parallel& par, const uint8_t* seed = nullptr, CacheBuffer* adopt = nullptr);
+		void Reset(const std::vector<std::wstring>& files, FileKind kind, const ViewDesc& view, const Layout& layout, uint64_t budget, int playhead, int rangeFirst, int rangeLast, bool multiFrame, const Parallel& par, const uint8_t* seed = nullptr, CacheBuffer* adopt = nullptr);
 		void SetPlayhead(int frame);
+		// the play range: decoding runs from the playhead through it, wrapping at its end; frames outside it are evicted first
+		void SetRange(int first, int last);
 		void SetCompletedFence(uint64_t value);
 		ID3D12Resource* AcquireForGpu(int frame, uint64_t fence);
 		uint8_t State(int frame);
 		int ReadPixel(int frame, int x, int y, float out[4]);
-		// a copy of a decoded frame, laid out as the current layout; false when it is not in the cache
-		bool CopyFrame(int frame, std::vector<uint8_t>& out);
+		// a copy of a decoded frame, laid out as the current layout; false when it is not in the cache or, given a generation, the cache was reset since
+		bool CopyFrame(int frame, std::vector<uint8_t>& out, uint64_t generation = 0);
+		// changes with every Reset
+		uint64_t Generation();
+		// fn reads the cached frame in place, under the cache lock (keep it short); false when the frame is not cached
+		bool WithFrame(int frame, FnRef<void(const uint8_t*)> fn);
 		void States(std::vector<uint8_t>& out);
 		std::string Error(int frame);
 		HANDLE ReadyEvent() const { return m_readyEvent; }
@@ -122,7 +128,9 @@ namespace iv
 
 		void WorkerLoop();
 		bool PickJob(int& frame, int& slot);
+		// a frame's place in the playback order from the playhead (the playhead, then the play range); frames outside it come after all of it
 		int Distance(int frame) const;
+		bool PlayheadInRange() const { return m_playhead >= m_rangeFirst && m_playhead <= m_rangeLast; }
 
 		ID3D12Device* m_device = nullptr;
 		CacheHeaps m_heaps;
@@ -146,6 +154,8 @@ namespace iv
 		std::vector<int> m_frameSlot;
 		std::vector<std::string> m_errors;
 		int m_playhead = 0;
+		int m_rangeFirst = 0;
+		int m_rangeLast = 0;
 		int m_pinned = -1;
 		uint64_t m_completed = 0;
 		HANDLE m_readyEvent = nullptr;

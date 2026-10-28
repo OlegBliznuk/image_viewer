@@ -34,6 +34,7 @@ namespace iv::fmt
 
 	inline uint16_t Le16(const uint8_t* p) { return uint16_t(p[0] | (p[1] << 8)); }
 	inline uint32_t Le32(const uint8_t* p) { return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24); }
+	inline uint16_t Be16(const uint8_t* p) { return uint16_t(p[0] << 8 | p[1]); }
 	inline uint32_t Be32(const uint8_t* p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
 
 	// file contents; resize leaves new bytes uninitialised (the read overwrites them)
@@ -69,6 +70,9 @@ namespace iv::fmt
 	std::string DecodeBmp(const uint8_t* data, size_t size, uint8_t* dst, size_t pitch, int maxW, int maxH, const Parallel& par = {});
 	std::string ProbeTga(const uint8_t* data, size_t size, Probe& out);
 	std::string DecodeTga(const uint8_t* data, size_t size, uint8_t* dst, size_t pitch, int maxW, int maxH, const Parallel& par = {});
+	// Softimage PIC: RGB (3-channel pixels) or RGBA, 16-bit samples when any channel packet is 16-bit
+	std::string ProbePic(const uint8_t* data, size_t size, Probe& out);
+	std::string DecodePic(const uint8_t* data, size_t size, uint8_t* dst, size_t pitch, int maxW, int maxH, const Parallel& par = {});
 	// JPEG through libjpeg-turbo: 8-bit YCbCr and gray files of the known subsamplings decode to their planes (Decode*Yuv), anything else to RGBA
 	std::string ProbeJpeg(const uint8_t* data, size_t size, Probe& out);
 	std::string DecodeJpeg(const uint8_t* data, size_t size, uint8_t* dst, size_t pitch, int maxW, int maxH, const Parallel& par = {});

@@ -17,7 +17,7 @@ namespace iv
 {
 	namespace
 	{
-		constexpr FormatDesc kFormats[] = { { "exr", FileKind::Exr, "OpenEXR image", 101 }, { "png", FileKind::Png, "PNG image", 102 }, { "jpg", FileKind::Jpeg, "JPEG image", 103 }, { "jpeg", FileKind::Jpeg, "JPEG image", 103 }, { "hdr", FileKind::Hdr, "Radiance HDR image", 104 }, { "bmp", FileKind::Bmp, "Bitmap image", 105 }, { "tga", FileKind::Tga, "Targa image", 106 }, { "cr3", FileKind::Cr3, "Canon RAW image", 107 }, { "gif", FileKind::Gif, "GIF image", 108 }, { "webp", FileKind::Webp, "WebP image", 109 }, { "svg", FileKind::Svg, "SVG image", 110 }, { "ico", FileKind::Ico, "Icon", 0 }, { "cur", FileKind::Ico, "Cursor", 0 }, { "heic", FileKind::Heic, "HEIC image", 111 }, { "heif", FileKind::Heic, "HEIF image", 111 }, { "tif", FileKind::Tiff, "TIFF image", 112 }, { "tiff", FileKind::Tiff, "TIFF image", 112 }, { "tx", FileKind::Tiff, "TX texture", 113 } };
+		constexpr FormatDesc kFormats[] = { { "exr", FileKind::Exr, "OpenEXR image", 101 }, { "png", FileKind::Png, "PNG image", 102 }, { "jpg", FileKind::Jpeg, "JPEG image", 103 }, { "jpeg", FileKind::Jpeg, "JPEG image", 103 }, { "hdr", FileKind::Hdr, "Radiance HDR image", 104 }, { "bmp", FileKind::Bmp, "Bitmap image", 105 }, { "tga", FileKind::Tga, "Targa image", 106 }, { "cr3", FileKind::Cr3, "Canon RAW image", 107 }, { "gif", FileKind::Gif, "GIF image", 108 }, { "webp", FileKind::Webp, "WebP image", 109 }, { "svg", FileKind::Svg, "SVG image", 110 }, { "ico", FileKind::Ico, "Icon", 0 }, { "cur", FileKind::Ico, "Cursor", 0 }, { "heic", FileKind::Heic, "HEIC image", 111 }, { "heif", FileKind::Heic, "HEIF image", 111 }, { "tif", FileKind::Tiff, "TIFF image", 112 }, { "tiff", FileKind::Tiff, "TIFF image", 112 }, { "tx", FileKind::Tiff, "TX texture", 113 }, { "pic", FileKind::Pic, "Softimage PIC image", 114 } };
 
 		// the readers that take the file's bytes; EXR and CR3 read from the path
 		struct Reader
@@ -41,6 +41,7 @@ namespace iv
 			case FileKind::Jpeg: return { .probe = fmt::ProbeJpeg, .decode = fmt::DecodeJpeg, .yuv = JpegYuv };
 			case FileKind::Bmp: return { fmt::ProbeBmp, fmt::DecodeBmp };
 			case FileKind::Tga: return { fmt::ProbeTga, fmt::DecodeTga };
+			case FileKind::Pic: return { fmt::ProbePic, fmt::DecodePic };
 			case FileKind::Hdr: return { fmt::ProbeHdr, fmt::DecodeHdr };
 			case FileKind::Gif: return { fmt::ProbeGif, fmt::DecodeGif, fmt::DecodeGifFrames, true };
 			case FileKind::Webp: return { fmt::ProbeWebp, fmt::DecodeWebp, fmt::DecodeWebpFrames, true };

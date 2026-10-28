@@ -1,5 +1,6 @@
 #pragma once
 
+#include "adjust.h"
 #include "disposer.h"
 #include "gpu.h"
 #include "image_io.h"
@@ -38,6 +39,8 @@ namespace iv
 		// the image the wheel opens next into a spare texture with its whole mip chain (false while the spare is in flight); AdoptAhead makes it current when that image opens with this layout
 		bool UploadAhead(Gpu& gpu, ID3D12GraphicsCommandList* cmd, ID3D12Resource* src, const Layout& layout, bool srgb, uint64_t fence, uint64_t completed);
 		bool AdoptAhead(Gpu& gpu, const Layout& layout);
+		// the colour adjustments the frame recording under fence draws with
+		void SetAdjust(const AdjustConstants& a, uint64_t fence);
 		void Draw(ID3D12GraphicsCommandList* cmd, const DrawParams& p, uint64_t fence, UINT rtWidth, UINT rtHeight);
 		// frees the held image once it is replaced and the GPU is done with it
 		void Retire(Gpu& gpu, uint64_t completed);
@@ -115,5 +118,9 @@ namespace iv
 		int m_overlay = -1;
 		std::vector<ComPtr<ID3D12Heap>> m_heaps;   // free heaps, the largest four kept
 		Disposer* m_disposer = nullptr;
+		// AdjustConstants per recording frame, slice fence % kAdjustSlices (frames in flight stay fewer)
+		ComPtr<ID3D12Resource> m_adjust;
+		uint8_t* m_adjustMapped = nullptr;
+		D3D12_GPU_VIRTUAL_ADDRESS m_adjustVa = 0;
 	};
 }

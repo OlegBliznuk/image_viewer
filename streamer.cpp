@@ -276,7 +276,7 @@ namespace iv
 		buffer = {};
 	}
 
-	void Streamer::Reset(const std::vector<std::wstring>& files, FileKind kind, const ViewDesc& view, const Layout& layout, uint64_t budget, int playhead, bool multiFrame, const Parallel& par, const uint8_t* seed, CacheBuffer* adopt)
+	void Streamer::Reset(const std::vector<std::wstring>& files, FileKind kind, const ViewDesc& view, const Layout& layout, uint64_t budget, int playhead, int rangeFirst, int rangeLast, bool multiFrame, const Parallel& par, const uint8_t* seed, CacheBuffer* adopt)
 	{
 		std::unique_lock lock(m_mutex);
 		m_generation++;
@@ -305,6 +305,8 @@ namespace iv
 		m_frameSlot.assign(files.size(), -1);
 		m_errors.assign(files.size(), {});
 		m_playhead = files.empty() ? 0 : std::clamp(playhead, 0, (int)files.size() - 1);
+		m_rangeFirst = files.empty() ? 0 : std::clamp(rangeFirst, 0, (int)files.size() - 1);
+		m_rangeLast = files.empty() ? 0 : std::clamp(rangeLast, m_rangeFirst, (int)files.size() - 1);
 		m_pinned = -1;
 		if (adopt && adopt->res && adopt->capacity >= layout.size && !files.empty())
 		{
@@ -360,17 +362,24 @@ namespace iv
 
 	int Streamer::Distance(int frame) const
 	{
-		const int n = (int)m_files.size();
-		return (frame - m_playhead + n) % n;
+		const int n = (int)m_files.size(), len = m_rangeLast - m_rangeFirst + 1;
+		if (frame == m_playhead)
+			return 0;
+		if (frame < m_rangeFirst || frame > m_rangeLast)
+			return len + 1 + (frame - m_playhead + n) % n;
+		return PlayheadInRange() ? (frame - m_playhead + len) % len : frame - m_rangeFirst + 1;
 	}
 
 	bool Streamer::PickJob(int& frame, int& slot)
 	{
-		const int n = (int)m_files.size();
-		const int window = (int)std::min<size_t>(n, m_maxSlots);
+		if (m_files.empty())
+			return false;
+		const int len = m_rangeLast - m_rangeFirst + 1;
+		const bool inRange = PlayheadInRange();
+		const int window = (int)std::min<size_t>(inRange ? len : len + 1, m_maxSlots);
 		for (int d = 0; d < window; ++d)
 		{
-			const int f = (m_playhead + d) % n;
+			const int f = inRange ? m_rangeFirst + (m_playhead - m_rangeFirst + d) % len : d == 0 ? m_playhead : m_rangeFirst + d - 1;
 			if (m_state[f] != kNone)
 				continue;
 			int pick = -1;
@@ -469,6 +478,22 @@ namespace iv
 		m_cv.notify_all();
 	}
 
+	void Streamer::SetRange(int first, int last)
+	{
+		{
+			std::lock_guard lock(m_mutex);
+			const int n = (int)m_files.size();
+			if (n == 0)
+				return;
+			first = std::clamp(first, 0, n - 1);
+			last = std::clamp(last, first, n - 1);
+			if (first == m_rangeFirst && last == m_rangeLast)
+				return;
+			m_rangeFirst = first, m_rangeLast = last;
+		}
+		m_cv.notify_all();
+	}
+
 	void Streamer::SetCompletedFence(uint64_t value)
 	{
 		{
@@ -505,14 +530,29 @@ namespace iv
 		return iv::ReadPixel(m_layout, m_slots[m_frameSlot[frame]]->buf.cpu, x, y, out);
 	}
 
-	bool Streamer::CopyFrame(int frame, std::vector<uint8_t>& out)
+	bool Streamer::CopyFrame(int frame, std::vector<uint8_t>& out, uint64_t generation)
 	{
 		std::lock_guard lock(m_mutex);
-		if (frame < 0 || frame >= (int)m_state.size() || m_state[frame] != kReady)
+		if ((generation && generation != m_generation) || frame < 0 || frame >= (int)m_state.size() || m_state[frame] != kReady)
 			return false;
 		const uint8_t* src = m_slots[m_frameSlot[frame]]->buf.cpu;
 		out.assign(src, src + m_layout.size);
 		return true;
+	}
+
+	bool Streamer::WithFrame(int frame, FnRef<void(const uint8_t*)> fn)
+	{
+		std::lock_guard lock(m_mutex);
+		if (frame < 0 || frame >= (int)m_state.size() || m_state[frame] != kReady)
+			return false;
+		fn(m_slots[m_frameSlot[frame]]->buf.cpu);
+		return true;
+	}
+
+	uint64_t Streamer::Generation()
+	{
+		std::lock_guard lock(m_mutex);
+		return m_generation;
 	}
 
 	void Streamer::States(std::vector<uint8_t>& out)
